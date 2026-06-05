@@ -135,7 +135,7 @@ def test_voted_visitor_sees_prior_selection(client, Session):
     assert resp.status_code == 200
     # 已投者再访问，单选 radio 对应项被 checked
     assert f'value="{oids[0]}"' in resp.text and "checked" in resp.text
-    assert "你已投票" in resp.text
+    assert "修改你的投票" in resp.text
 
 
 def test_new_visitor_gets_voter_cookie(client, Session):
