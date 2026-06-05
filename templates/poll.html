@@ -5,7 +5,15 @@
 {% if closed %}
 <div class="banner">⏹ 投票已结束。下面是最终结果。</div>
 {% endif %}
-<div id="vote-panel">
-  {% include "_poll_state.html" %}
+
+{# 结果区是稳定节点：脱离投票 swap 范围，SSE 连接全程不被销毁重建。 #}
+<div id="results" hx-ext="sse" sse-connect="/p/{{ poll.id }}/stream" sse-swap="update">
+  {% include "_results.html" %}
 </div>
+
+{% if not closed %}
+<div id="vote-panel">
+  {% include "_ballot_region.html" %}
+</div>
+{% endif %}
 {% endblock %}

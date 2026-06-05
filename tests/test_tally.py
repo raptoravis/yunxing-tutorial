@@ -118,3 +118,14 @@ def test_scoring_single_vote_decimal(Session):
     rows = {r.label: r for r in res.rows}
     assert rows["A"].average == 5.0
     assert rows["B"].average == 2.0
+
+
+def test_scoring_percent_baseline_at_min(Session):
+    """进度条以量程 1 为 0% 基线、5 为 100%（最低分不再显示 20% 填充）。"""
+    pid, oids = _poll(Session, "scoring", ["A", "B", "C"],
+                      [{0: 5, 1: 3, 2: 1}])
+    res = _compute(Session, pid)
+    rows = {r.label: r for r in res.rows}
+    assert rows["A"].percent == 100.0   # avg 5 → 满
+    assert rows["B"].percent == 50.0    # avg 3 → 半
+    assert rows["C"].percent == 0.0     # avg 1 → 空

@@ -72,6 +72,25 @@ def test_poll_page_shows_results_after_vote(client, Session):
     assert "修改你的投票" in resp.text
 
 
+def test_results_sse_node_outside_vote_panel(client, Session):
+    """#results(SSE) 必须在 #vote-panel 之外，避免投票 swap 销毁重建 EventSource。"""
+    pid, oids = make_poll(Session)
+    html = client.get(f"/p/{pid}").text
+    results_pos = html.find('id="results"')
+    panel_pos = html.find('id="vote-panel"')
+    assert results_pos != -1 and panel_pos != -1
+    assert results_pos < panel_pos  # 结果区是 vote-panel 的前置兄弟
+    assert "sse-connect" in html[:panel_pos]  # SSE 连接挂在 results 上
+
+
+def test_vote_response_has_no_duplicate_sse_node(client, Session):
+    """投票后 swap 进 #vote-panel 的片段不得再含 sse-connect（否则重复连接）。"""
+    pid, oids = make_poll(Session)
+    resp = client.post(f"/p/{pid}/vote", data={"choice": str(oids[0])})
+    assert resp.status_code == 200
+    assert "sse-connect" not in resp.text
+
+
 # ---------- U6：SSE + pub/sub ----------
 
 
@@ -115,6 +134,23 @@ def test_broker_publish_no_subscribers_noop():
     b = Broker()
     b.publish("nobody")  # 不应抛错
     assert b.subscriber_count("nobody") == 0
+
+
+def test_broker_drops_signal_when_queue_full():
+    import asyncio
+
+    from app.broker import Broker
+
+    async def run():
+        b = Broker()
+        q = b.subscribe("p")
+        for _ in range(64):  # 填满 maxsize=64
+            q.put_nowait(None)
+        b.publish("p")  # 队列满，应丢弃信号而非抛 QueueFull
+        await asyncio.sleep(0)
+        assert q.qsize() == 64
+
+    asyncio.run(run())
 
 
 def test_vote_triggers_broker_publish(client, Session, monkeypatch):

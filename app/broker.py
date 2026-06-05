@@ -22,7 +22,9 @@ class Broker:
     def subscribe(self, poll_id: str) -> asyncio.Queue:
         # subscribe 在 SSE async 端点内调用，捕获运行中的事件循环供跨线程投递。
         self._loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
+        # 有界队列：信号仅是"重渲染"触发，慢消费者下丢弃多余信号即可（见 publish），
+        # 避免卡住的订阅者导致队列无界增长（可靠性评审）。
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
         self._subs[poll_id].add(queue)
         return queue
 
@@ -35,16 +37,30 @@ class Broker:
             self._subs.pop(poll_id, None)  # 防注册表泄漏
 
     def publish(self, poll_id: str) -> None:
-        """向该 poll 的所有订阅者发"已更新"信号。可从任意线程调用。"""
+        """向该 poll 的所有订阅者发"已更新"信号。可从任意线程调用。
+
+        信号是幂等的重渲染触发：队列满时丢弃多余信号（订阅者已有待处理信号，
+        会渲染到最新状态），事件循环已关闭时静默跳过——广播失败不应让投票请求 500。
+        """
         subs = self._subs.get(poll_id)
         if not subs:
             return
         loop = self._loop
         for queue in list(subs):
             if loop is not None and loop.is_running():
-                loop.call_soon_threadsafe(queue.put_nowait, None)
+                try:
+                    loop.call_soon_threadsafe(self._safe_put, queue)
+                except RuntimeError:
+                    pass  # 循环在检查后被关闭：广播失败不应中断投票请求
             else:
-                queue.put_nowait(None)
+                self._safe_put(queue)
+
+    @staticmethod
+    def _safe_put(queue: asyncio.Queue) -> None:
+        try:
+            queue.put_nowait(None)
+        except asyncio.QueueFull:
+            pass  # 已有待处理信号，重渲染会取到最新状态，丢弃即可
 
     def subscriber_count(self, poll_id: str) -> int:
         return len(self._subs.get(poll_id, ()))

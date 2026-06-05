@@ -4,14 +4,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.datastructures import FormData
 from fastapi.responses import HTMLResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..dedup import client_ip, get_or_create_voter_key, rate_limiter, set_voter_cookie
 from ..models import BALLOT_PARTIAL, SCORE_MAX, SCORE_MIN, Mechanism, Option, Poll, Vote
+from ..routes.results import publish_results, render_ballot_region, state_context
 from ..security import generate_admin_token, generate_poll_id, hash_token
 from ..templating import templates
 
@@ -205,8 +207,6 @@ def create_poll(
 def _get_poll_or_404(db: Session, poll_id: str) -> Poll:
     poll = db.get(Poll, poll_id)
     if poll is None:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="投票不存在")
     return poll
 
@@ -221,8 +221,6 @@ def _existing_vote(db: Session, poll_id: str, voter_key: str) -> Vote | None:
 
 @router.get("/p/{poll_id}", response_class=HTMLResponse)
 def poll_page(poll_id: str, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    from ..routes.results import state_context
-
     poll = _get_poll_or_404(db, poll_id)
     voter_key, is_new = get_or_create_voter_key(request)
     ctx = state_context(db, poll, None if is_new else voter_key)
@@ -262,45 +260,38 @@ def submit_vote(
     voter_key, is_new = get_or_create_voter_key(request)
     payload, error = parse_ballot(poll, form)
     if error:
-        from ..routes.results import render_poll_state
-
-        response = render_poll_state(request, db, poll, voter_key=voter_key, error=error)
+        response = render_ballot_region(request, db, poll, voter_key=voter_key, error=error)
         if is_new:
             set_voter_cookie(response, voter_key)
         return response
 
-    existing = _existing_vote(db, poll_id, voter_key)
-    if existing is not None:
-        # 关闭前可改票（R6）：覆盖旧票，不新增。
-        existing.payload = payload
-        existing.ip = client_ip(request)
-    else:
-        db.add(Vote(poll_id=poll_id, voter_key=voter_key, ip=client_ip(request), payload=payload))
-    db.commit()
+    _upsert_vote(db, poll_id, voter_key, client_ip(request), payload)
 
-    # 投后实时广播（U6 接入 broker；U5 期间 no-op）。
-    from ..routes.results import publish_results
-
+    # 投后实时广播：发信号，投票者自己的 SSE 连接据此重渲染外层 #results（R9）。
     publish_results(db, poll)
 
-    response = render_post_vote(request, db, poll, voter_key=voter_key)
+    response = render_ballot_region(request, db, poll, voter_key=voter_key, voted=True)
     if is_new:
         set_voter_cookie(response, voter_key)
     return response
 
 
-def render_post_vote(
-    request: Request, db: Session, poll: Poll, *, voter_key: str
-) -> HTMLResponse:
-    """投票后返回片段。U5 覆写为结果面板；U4 期间为投票确认。
-
-    在 results 模块就绪后转交其渲染（投后实时结果 R9）。
-    """
+def _upsert_vote(db: Session, poll_id: str, voter_key: str, ip: str | None, payload) -> None:
+    """按 (poll_id, voter_key) upsert。并发首投撞唯一约束时回退为改票（R6）。"""
+    existing = _existing_vote(db, poll_id, voter_key)
+    if existing is not None:
+        existing.payload = payload
+        existing.ip = ip
+        db.commit()
+        return
+    db.add(Vote(poll_id=poll_id, voter_key=voter_key, ip=ip, payload=payload))
     try:
-        from ..routes.results import render_results_panel
-
-        return render_results_panel(request, db, poll, voter_key=voter_key, voted=True)
-    except ImportError:
-        return templates.TemplateResponse(
-            request, "_voted.html", {"poll": poll}
-        )
+        db.commit()
+    except IntegrityError:
+        # 两个并发首投同 voter_key：先到者已插入，本次回退为覆盖更新。
+        db.rollback()
+        existing = _existing_vote(db, poll_id, voter_key)
+        if existing is not None:
+            existing.payload = payload
+            existing.ip = ip
+            db.commit()

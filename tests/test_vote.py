@@ -168,3 +168,25 @@ def test_poll_has_votes_freeze_helper(client, Session):
 def test_vote_on_missing_poll_404(client):
     resp = client.post("/p/nonexistent/vote", data={"choice": "1"})
     assert resp.status_code == 404
+
+
+def test_upsert_vote_idempotent_no_duplicate(client, Session):
+    """_upsert_vote 重复同 voter_key 只更新不新增（并发首投撞唯一约束的回退路径同构）。"""
+    from app.db import SessionLocal
+    from app.models import Vote
+    from app.routes.polls import _upsert_vote
+
+    pid, oids = make_poll(Session, "single", ["A", "B"])
+    s = SessionLocal()
+    try:
+        _upsert_vote(s, pid, "vk", "1.1.1.1", oids[0])
+        _upsert_vote(s, pid, "vk", "1.1.1.1", oids[1])
+    finally:
+        s.close()
+    s = SessionLocal()
+    try:
+        votes = s.query(Vote).filter_by(poll_id=pid).all()
+        assert len(votes) == 1
+        assert votes[0].payload == oids[1]
+    finally:
+        s.close()

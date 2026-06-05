@@ -65,20 +65,14 @@ def state_context(
     }
 
 
-def render_poll_state(
+def render_ballot_region(
     request: Request, db: Session, poll: Poll, *, voter_key: str | None,
     voted: bool = False, error: str | None = None,
 ) -> HTMLResponse:
+    """#vote-panel 的投票/改票表单片段。结果区在外层 #results、由 SSE 更新。"""
     ctx = state_context(db, poll, voter_key, voted=voted, error=error)
     status = 400 if error else 200
-    return templates.TemplateResponse(request, "_poll_state.html", ctx, status_code=status)
-
-
-def render_results_panel(
-    request: Request, db: Session, poll: Poll, *, voter_key: str | None, voted: bool = False
-) -> HTMLResponse:
-    """polls.render_post_vote 的回调：投票后返回完整面板（结果 + 可改票表单）。"""
-    return render_poll_state(request, db, poll, voter_key=voter_key, voted=voted)
+    return templates.TemplateResponse(request, "_ballot_region.html", ctx, status_code=status)
 
 
 def results_html(db: Session, poll: Poll, voter_key: str | None, *, voted: bool = False) -> str:
@@ -93,13 +87,18 @@ def publish_results(db: Session, poll: Poll) -> None:
 
 
 def _render_stream_html(poll_id: str, voter_key: str | None) -> str | None:
-    """SSE 内重渲染：短生命周期同步 session（KTD2，跑在 threadpool）。"""
+    """SSE 内重渲染：短生命周期同步 session（KTD2，跑在 threadpool）。
+
+    渲染异常时返回 None（跳过本次推送），不让瞬时 DB 错误中断整条 SSE 流。
+    """
     db = SessionLocal()
     try:
         poll = db.get(Poll, poll_id)
         if poll is None:
             return None
         return results_html(db, poll, voter_key)
+    except Exception:
+        return None
     finally:
         db.close()
 

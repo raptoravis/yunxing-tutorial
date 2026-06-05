@@ -7,24 +7,6 @@
   {% if tally.total_voters == 0 %}
   <p class="muted">还没有人投票。</p>
   {% endif %}
-  {% for row in tally.rows %}
-  <div class="result-row">
-    <div class="result-label">
-      <span>{{ loop.index }}. {{ row.label }}</span>
-      <span class="muted">
-        {%- if tally.mechanism in ('single', 'multiple') -%}
-          {{ row.count }} 票 · {{ row.percent }}%
-        {%- elif tally.mechanism == 'ranking' -%}
-          {{ row.points }} 分
-        {%- elif tally.mechanism == 'scoring' -%}
-          平均 {{ row.average }} / 5
-        {%- endif -%}
-      </span>
-    </div>
-    <div class="result-bar-track">
-      <div class="result-bar-fill" style="width: {{ row.percent }}%;"></div>
-    </div>
-  </div>
-  {% endfor %}
+  {% include "_result_rows.html" %}
 </div>
 {% endif %}

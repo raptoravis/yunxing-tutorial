@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .models import Mechanism, Poll, Vote
+from .models import SCORE_MAX, SCORE_MIN, Mechanism, Poll, Vote
 
 
 @dataclass
@@ -78,9 +78,10 @@ def compute_tally(poll: Poll, votes: list[Vote]) -> TallyResult:
                 oid = int(oid_str)
                 if oid in sums:
                     sums[oid] += int(score)
+        span = SCORE_MAX - SCORE_MIN  # 量程 1–5：进度条以 1 为 0% 基线、5 为 100%
         for oid, row in by_id.items():
             row.average = round(sums[oid] / n, 2) if n else 0.0
-            row.percent = _percent(row.average, 5)  # 量程 1–5
+            row.percent = _percent(row.average - SCORE_MIN, span) if n else 0.0
         rows = sorted(by_id.values(), key=lambda r: r.average, reverse=True)
 
     else:

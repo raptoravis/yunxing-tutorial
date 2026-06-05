@@ -1,0 +1,20 @@
+{# 按机制渲染计票条形。供 _results.html（投票者）与 _admin_view.html（管理）复用。 #}
+{% for row in tally.rows %}
+<div class="result-row">
+  <div class="result-label">
+    <span>{{ loop.index }}. {{ row.label }}</span>
+    <span class="muted">
+      {%- if tally.mechanism in ('single', 'multiple') -%}
+        {{ row.count }} 票 · {{ row.percent }}%
+      {%- elif tally.mechanism == 'ranking' -%}
+        {{ row.points }} 分
+      {%- elif tally.mechanism == 'scoring' -%}
+        平均 {{ row.average }} / 5
+      {%- endif -%}
+    </span>
+  </div>
+  <div class="result-bar-track">
+    <div class="result-bar-fill" style="width: {{ row.percent }}%;"></div>
+  </div>
+</div>
+{% endfor %}

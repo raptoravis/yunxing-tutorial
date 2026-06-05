@@ -1,0 +1,6 @@
+{# #vote-panel 的内部内容：投票/改票表单（结果区在外层 #results，由 SSE 更新）。 #}
+{% if has_voted %}
+<h2>修改你的投票</h2>
+<p class="muted">结束前可随时覆盖你先前的选择。</p>
+{% endif %}
+{% include "_ballot_form.html" %}
