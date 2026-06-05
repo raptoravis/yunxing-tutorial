@@ -1,3 +1,4 @@
 
 # Compound Engineering machine-local config
 .yunxing/*.local.yaml
+uv.lock
