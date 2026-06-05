@@ -37,9 +37,12 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ANN001
 
 @pytest.fixture(autouse=True)
 def _fresh_schema():
-    """每个测试前重建表，保证隔离。"""
+    """每个测试前重建表并重置进程内限速状态，保证隔离。"""
     db_mod.Base.metadata.drop_all(bind=db_mod.engine)
     db_mod.Base.metadata.create_all(bind=db_mod.engine)
+    from app.dedup import rate_limiter
+
+    rate_limiter.reset()
     yield
 
 

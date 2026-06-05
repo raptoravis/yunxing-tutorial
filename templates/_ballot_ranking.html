@@ -1,0 +1,40 @@
+<p class="muted">拖动或用按钮把全部选项从高到低排好优先级（要求全排）：</p>
+<div x-data="rankingBallot(
+  [{% for o in poll.options %}{id: {{ o.id }}, label: {{ o.label | tojson }}}{{ ',' if not loop.last }}{% endfor %}],
+  {{ (existing_payload if existing_payload else []) | tojson }}
+)">
+  <ul class="sortable-list" x-sort="move($item, $position)">
+    <template x-for="(oid, idx) in items" :key="oid">
+      <li class="sortable-item" x-sort:item="oid">
+        <span class="handle" aria-hidden="true">⠿</span>
+        <span x-text="(idx + 1) + '. ' + labels[oid]"></span>
+        <span style="margin-left:auto; display:flex; gap:0.25rem;">
+          <button type="button" class="secondary" @click="up(idx)" :disabled="idx === 0" aria-label="上移">▲</button>
+          <button type="button" class="secondary" @click="down(idx)" :disabled="idx === items.length - 1" aria-label="下移">▼</button>
+        </span>
+      </li>
+    </template>
+  </ul>
+  <input type="hidden" name="ranking" :value="items.join(',')">
+</div>
+
+<script>
+function rankingBallot(options, initialOrder) {
+  const allIds = options.map(o => o.id);
+  const labels = {};
+  options.forEach(o => { labels[o.id] = o.label; });
+  const start = (initialOrder && initialOrder.length === allIds.length) ? initialOrder.slice() : allIds.slice();
+  return {
+    items: start,
+    labels: labels,
+    up(i) { if (i > 0) { const a = this.items; [a[i-1], a[i]] = [a[i], a[i-1]]; } },
+    down(i) { if (i < this.items.length - 1) { const a = this.items; [a[i+1], a[i]] = [a[i], a[i+1]]; } },
+    move(id, pos) {
+      const from = this.items.indexOf(id);
+      if (from === -1 || pos < 0) return;
+      this.items.splice(from, 1);
+      this.items.splice(pos, 0, id);
+    },
+  };
+}
+</script>

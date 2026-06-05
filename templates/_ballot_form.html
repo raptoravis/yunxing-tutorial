@@ -1,0 +1,7 @@
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form hx-post="/p/{{ poll.id }}/vote" hx-target="#vote-panel" hx-swap="innerHTML" class="card">
+  {% include ballot_partial %}
+  <div style="margin-top:1rem;">
+    <button type="submit">提交投票</button>
+  </div>
+</form>

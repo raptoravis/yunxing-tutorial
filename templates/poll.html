@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ poll.title }}{% endblock %}
+{% block content %}
+<h1>{{ poll.title }}</h1>
+
+{% if closed %}
+<div class="banner">⏹ 投票已结束。下面是最终结果。</div>
+<div id="vote-panel">
+  {% include "_results.html" ignore missing %}
+</div>
+{% else %}
+<div id="vote-panel">
+  {% if has_voted %}
+  <div class="notice">你已投票，结束前可随时修改你的选择。</div>
+  {% endif %}
+  {% include "_ballot_form.html" %}
+</div>
+{% endif %}
+{% endblock %}

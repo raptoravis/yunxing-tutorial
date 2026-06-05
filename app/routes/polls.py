@@ -2,19 +2,102 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.datastructures import FormData
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Mechanism, Option, Poll
+from ..dedup import client_ip, get_or_create_voter_key, rate_limiter, set_voter_cookie
+from ..models import SCORE_MAX, SCORE_MIN, Mechanism, Option, Poll, Vote
 from ..security import generate_admin_token, generate_poll_id, hash_token
 from ..templating import templates
 
 router = APIRouter()
 
 VALID_MECHANISMS = {m.value for m in Mechanism}
+
+BALLOT_PARTIAL = {
+    Mechanism.single.value: "_ballot_single.html",
+    Mechanism.multiple.value: "_ballot_multiple.html",
+    Mechanism.ranking.value: "_ballot_ranking.html",
+    Mechanism.scoring.value: "_ballot_scoring.html",
+}
+
+
+def poll_has_votes(db: Session, poll_id: str) -> bool:
+    return db.query(Vote).filter_by(poll_id=poll_id).first() is not None
+
+
+def _option_ids(poll: Poll) -> set[int]:
+    return {o.id for o in poll.options}
+
+
+def parse_ballot(poll: Poll, form: FormData) -> tuple[Any, str | None]:
+    """按机制解析并强校验 ballot。返回 (payload, error)。
+
+    服务端是唯一权威——不信任前端校验（R7）。payload 形状见 models.Vote。
+    """
+    valid = _option_ids(poll)
+
+    def _as_ids(values: list[str]) -> tuple[list[int], str | None]:
+        try:
+            ids = [int(v) for v in values]
+        except (ValueError, TypeError):
+            return [], "选项格式无效。"
+        if any(i not in valid for i in ids):
+            return [], "包含无效选项。"
+        return ids, None
+
+    mech = poll.mechanism
+    if mech == Mechanism.single.value:
+        raw = form.get("choice")
+        if raw is None or raw == "":
+            return None, "请选择一项。"
+        ids, err = _as_ids([raw])
+        if err:
+            return None, err
+        return ids[0], None
+
+    if mech == Mechanism.multiple.value:
+        ids, err = _as_ids(form.getlist("choice"))
+        if err:
+            return None, err
+        ids = sorted(set(ids))
+        if len(ids) < 1:
+            return None, "至少选择一项。"
+        if poll.multi_max_n is not None and len(ids) > poll.multi_max_n:
+            return None, f"最多可选 {poll.multi_max_n} 项。"
+        return ids, None
+
+    if mech == Mechanism.ranking.value:
+        raw = form.get("ranking") or ""
+        parts = [p for p in raw.split(",") if p != ""]
+        ids, err = _as_ids(parts)
+        if err:
+            return None, err
+        if sorted(ids) != sorted(valid):
+            return None, "排序必须包含且仅包含全部选项各一次。"
+        return ids, None
+
+    if mech == Mechanism.scoring.value:
+        scores: dict[str, int] = {}
+        for oid in valid:
+            raw = form.get(f"score_{oid}")
+            if raw is None or raw == "":
+                return None, "请为每个选项打分。"
+            try:
+                val = int(raw)
+            except ValueError:
+                return None, "打分必须为整数。"
+            if not (SCORE_MIN <= val <= SCORE_MAX):
+                return None, f"打分须在 {SCORE_MIN}–{SCORE_MAX} 之间。"
+            scores[str(oid)] = val
+        return scores, None
+
+    return None, "未知投票机制。"
 
 
 def _parse_deadline(raw: str | None) -> tuple[datetime | None, str | None]:
@@ -116,3 +199,112 @@ async def create_poll(request: Request, db: Session = Depends(get_db)) -> HTMLRe
         "created.html",
         {"poll": poll, "public_url": public_url, "admin_url": admin_url},
     )
+
+
+def _get_poll_or_404(db: Session, poll_id: str) -> Poll:
+    poll = db.get(Poll, poll_id)
+    if poll is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="投票不存在")
+    return poll
+
+
+def _existing_vote(db: Session, poll_id: str, voter_key: str) -> Vote | None:
+    return (
+        db.query(Vote)
+        .filter_by(poll_id=poll_id, voter_key=voter_key)
+        .one_or_none()
+    )
+
+
+@router.get("/p/{poll_id}", response_class=HTMLResponse)
+def poll_page(poll_id: str, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    poll = _get_poll_or_404(db, poll_id)
+    voter_key, is_new = get_or_create_voter_key(request)
+    existing = None if is_new else _existing_vote(db, poll_id, voter_key)
+    closed = poll.is_closed()
+
+    ctx = {
+        "poll": poll,
+        "ballot_partial": BALLOT_PARTIAL[poll.mechanism],
+        "existing": existing,
+        "existing_payload": existing.payload if existing else None,
+        "has_voted": existing is not None,
+        "closed": closed,
+    }
+    response = templates.TemplateResponse(request, "poll.html", ctx)
+    if is_new:
+        set_voter_cookie(response, voter_key)
+    return response
+
+
+@router.post("/p/{poll_id}/vote", response_class=HTMLResponse)
+async def submit_vote(
+    poll_id: str, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    poll = _get_poll_or_404(db, poll_id)
+
+    # 关闭判定以服务端时间为准（R8 / U8）：在途提交被拒、不静默丢弃。
+    if poll.is_closed():
+        return templates.TemplateResponse(
+            request,
+            "_vote_error.html",
+            {"message": "投票已结束，无法再提交。"},
+            status_code=409,
+        )
+
+    # 软性 per-IP 限速（KTD7 / U8）。
+    if not rate_limiter.check_and_record(client_ip(request)):
+        return templates.TemplateResponse(
+            request,
+            "_vote_error.html",
+            {"message": "提交过于频繁，请稍后再试。"},
+            status_code=429,
+        )
+
+    voter_key, is_new = get_or_create_voter_key(request)
+    form = await request.form()
+    payload, error = parse_ballot(poll, form)
+    if error:
+        ctx = {
+            "poll": poll,
+            "ballot_partial": BALLOT_PARTIAL[poll.mechanism],
+            "existing_payload": payload,
+            "error": error,
+        }
+        response = templates.TemplateResponse(request, "_ballot_form.html", ctx, status_code=400)
+        if is_new:
+            set_voter_cookie(response, voter_key)
+        return response
+
+    existing = _existing_vote(db, poll_id, voter_key)
+    if existing is not None:
+        # 关闭前可改票（R6）：覆盖旧票，不新增。
+        existing.payload = payload
+        existing.ip = client_ip(request)
+    else:
+        db.add(Vote(poll_id=poll_id, voter_key=voter_key, ip=client_ip(request), payload=payload))
+    db.commit()
+
+    response = render_post_vote(request, db, poll, voter_key=voter_key)
+    if is_new:
+        set_voter_cookie(response, voter_key)
+    return response
+
+
+def render_post_vote(
+    request: Request, db: Session, poll: Poll, *, voter_key: str
+) -> HTMLResponse:
+    """投票后返回片段。U5 覆写为结果面板；U4 期间为投票确认。
+
+    在 results 模块就绪后转交其渲染（投后实时结果 R9）。
+    """
+    try:
+        from ..routes.results import render_results_panel
+
+        return render_results_panel(request, db, poll, voter_key=voter_key, voted=True)
+    except ImportError:
+        return templates.TemplateResponse(
+            request, "_voted.html", {"poll": poll}
+        )

@@ -1,0 +1,8 @@
+<p class="muted">从下列选项中选恰好一项：</p>
+{% for opt in poll.options %}
+<label class="option-row" style="font-weight:normal; cursor:pointer;">
+  <input type="radio" name="choice" value="{{ opt.id }}" style="width:auto;"
+         {% if existing_payload == opt.id %}checked{% endif %} required>
+  {{ opt.label }}
+</label>
+{% endfor %}
