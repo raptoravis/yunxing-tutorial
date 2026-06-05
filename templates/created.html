@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}投票已创建{% endblock %}
+{% block content %}
+<h1>✅ 投票已创建</h1>
+<p class="muted">「{{ poll.title }}」已就绪。请妥善保存下面两条链接。</p>
+
+<div class="card">
+  <h2>公开投票链接</h2>
+  <p class="muted">分享给参与者，点开即可投票。</p>
+  <div class="link-box" id="public-link">{{ public_url }}</div>
+  <button class="secondary" type="button"
+          onclick="navigator.clipboard.writeText(document.getElementById('public-link').innerText)">
+    复制公开链接
+  </button>
+</div>
+
+<div class="card" style="border-color: var(--danger);">
+  <h2>管理链接（含密钥）</h2>
+  <div class="notice">
+    ⚠️ <strong>仅你持有，无法找回。</strong> 此链接含管理密钥，可结束投票、查看管理视图。
+    任何拿到它的人都能管理本投票。请妥善保存——丢失即无法再管理，泄漏即失控。
+  </div>
+  <div class="link-box" id="admin-link">{{ admin_url }}</div>
+  <button class="secondary" type="button"
+          onclick="navigator.clipboard.writeText(document.getElementById('admin-link').innerText)">
+    复制管理链接
+  </button>
+</div>
+
+<p><a href="/" class="btn secondary">再创建一个</a></p>
+{% endblock %}
