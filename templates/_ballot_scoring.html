@@ -1,0 +1,23 @@
+<p class="muted">为每个选项打 1–5 分（须全部打分）：</p>
+{% for opt in poll.options %}
+<div class="score-row"
+     x-data="scoreStars({{ (existing_payload.get(opt.id|string, 0) if existing_payload else 0) }})">
+  <span>{{ opt.label }}</span>
+  <span>
+    <span class="stars" role="radiogroup" aria-label="{{ opt.label }} 评分">
+      <template x-for="n in 5" :key="n">
+        <span class="star" :class="{ on: n <= value }" @click="value = n"
+              role="radio" :aria-checked="n === value" tabindex="0"
+              @keydown.enter="value = n" x-text="n <= value ? '★' : '☆'"></span>
+      </template>
+    </span>
+    <input type="hidden" name="score_{{ opt.id }}" :value="value" required>
+  </span>
+</div>
+{% endfor %}
+
+<script>
+function scoreStars(initial) {
+  return { value: initial || 0 };
+}
+</script>

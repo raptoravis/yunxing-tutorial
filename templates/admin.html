@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}管理 · {{ poll.title }}{% endblock %}
+{% block content %}
+<h1>管理：{{ poll.title }}</h1>
+<p class="muted">仅持管理链接者可见。密钥保存在链接 # 之后，不会发往服务器日志。</p>
+
+<div id="admin-content" class="card">加载中…</div>
+
+<script>
+  const POLL_ID = {{ poll.id | tojson }};
+  // 密钥在 URL fragment（# 之后），不进入 path/query，故不入访问日志/Referer。
+  const TOKEN = window.location.hash.slice(1);
+
+  async function loadView() {
+    const el = document.getElementById('admin-content');
+    if (!TOKEN) { el.innerHTML = '<p class="error">缺少管理密钥。请用完整的管理链接打开。</p>'; return; }
+    const r = await fetch(`/admin/${POLL_ID}/view`, { headers: { 'X-Admin-Token': TOKEN } });
+    if (r.status === 403) { el.innerHTML = '<p class="error">管理密钥无效。</p>'; return; }
+    el.innerHTML = await r.text();
+  }
+
+  async function closePoll() {
+    if (!confirm('确定结束投票？结束后不可再投票，且不可撤销。')) return;
+    const r = await fetch(`/admin/${POLL_ID}/close`, { method: 'POST', headers: { 'X-Admin-Token': TOKEN } });
+    if (r.ok) { document.getElementById('admin-content').innerHTML = await r.text(); }
+  }
+
+  window.closePoll = closePoll;
+  loadView();
+</script>
+{% endblock %}

@@ -1,0 +1,103 @@
+:root {
+  --bg: #f6f7f9;
+  --fg: #1c2430;
+  --muted: #6b7684;
+  --accent: #2f6feb;
+  --accent-soft: #e3edff;
+  --border: #dce0e6;
+  --danger: #c0392b;
+  --ok: #1f883d;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.site-header { margin-bottom: 1.5rem; }
+.brand { font-size: 1.25rem; font-weight: 700; text-decoration: none; color: var(--fg); }
+
+h1 { font-size: 1.6rem; margin: 0 0 1rem; }
+h2 { font-size: 1.2rem; }
+
+.card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
+
+input[type="text"], input[type="datetime-local"], input[type="number"], select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  background: #fff;
+}
+
+button, .btn {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+button.secondary, .btn.secondary { background: #fff; color: var(--fg); border: 1px solid var(--border); }
+button.danger, .btn.danger { background: var(--danger); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.muted { color: var(--muted); }
+.error { color: var(--danger); font-size: 0.9rem; margin: 0.25rem 0; }
+.notice { background: var(--accent-soft); border-radius: 8px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
+.banner { background: #fff4e5; border: 1px solid #ffd699; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+
+.option-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.option-row input[type="text"] { flex: 1; }
+
+.link-box {
+  display: flex; gap: 0.5rem; align-items: center;
+  background: #f2f4f7; border-radius: 8px; padding: 0.5rem 0.75rem; margin: 0.4rem 0;
+  word-break: break-all; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85rem;
+}
+
+/* 结果条形 */
+.result-row { margin: 0.6rem 0; }
+.result-bar-track { background: #eef0f3; border-radius: 6px; height: 1.5rem; overflow: hidden; }
+.result-bar-fill { background: var(--accent); height: 100%; border-radius: 6px 0 0 6px; transition: width 0.4s ease; }
+.result-label { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.2rem; }
+
+/* 排序 ballot */
+.sortable-list { list-style: none; padding: 0; margin: 0; }
+.sortable-item {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; cursor: grab;
+}
+.sortable-item .handle { color: var(--muted); }
+
+/* 打分 ballot */
+.score-row { display: flex; align-items: center; justify-content: space-between; margin: 0.5rem 0; }
+.stars { font-size: 1.5rem; cursor: pointer; user-select: none; }
+.star { color: #d0d4da; }
+.star.on { color: #f5a623; }

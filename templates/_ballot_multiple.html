@@ -1,0 +1,12 @@
+<p class="muted">
+  选择 1 至
+  {% if poll.multi_max_n %}{{ poll.multi_max_n }}{% else %}不限{% endif %}
+  项：
+</p>
+{% for opt in poll.options %}
+<label class="option-row" style="font-weight:normal; cursor:pointer;">
+  <input type="checkbox" name="choice" value="{{ opt.id }}" style="width:auto;"
+         {% if existing_payload and opt.id in existing_payload %}checked{% endif %}>
+  {{ opt.label }}
+</label>
+{% endfor %}

@@ -1,0 +1,24 @@
+<div class="result-label" style="margin-bottom:1rem;">
+  <strong>状态：</strong>
+  {% if stats.closed %}
+  <span style="color: var(--danger);">已结束{% if stats.closed_at %}（手动）{% else %}（已过截止）{% endif %}</span>
+  {% else %}
+  <span style="color: var(--ok);">进行中</span>
+  {% endif %}
+</div>
+
+<p class="muted">
+  机制：{{ poll.mechanism }} ·
+  总票数：<strong>{{ stats.total_votes }}</strong>
+  {% if poll.deadline %} · 截止：{{ poll.deadline.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}
+</p>
+
+<h2>当前结果</h2>
+{% include "_result_rows.html" %}
+
+{% if not stats.closed %}
+<div style="margin-top:1.5rem;">
+  <button type="button" class="danger" onclick="closePoll()">结束投票</button>
+  <p class="muted" style="margin-top:0.5rem;">结束后将立即停止收票，并向投票者公布最终结果。</p>
+</div>
+{% endif %}

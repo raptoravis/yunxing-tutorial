@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}创建投票{% endblock %}
+{% block content %}
+<h1>创建投票</h1>
+
+{% if errors %}
+<div class="card" style="border-color: var(--danger);">
+  {% for e in errors %}<p class="error">{{ e }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<form method="post" action="/polls" class="card"
+      x-data='createForm({{ (form.options if form else ["", ""]) | tojson }}, {{ (form.mechanism if form else "single") | tojson }})'>
+  <label for="title">标题</label>
+  <input type="text" id="title" name="title" placeholder="例如：本周五午餐去哪？"
+         value="{{ form.title if form else '' }}" required>
+
+  <label>候选选项（至少 2 个）</label>
+  <template x-for="(opt, i) in options" :key="i">
+    <div class="option-row">
+      <input type="text" name="options" x-model="options[i]" placeholder="选项内容">
+      <button type="button" class="secondary" @click="remove(i)" x-show="options.length > 2">✕</button>
+    </div>
+  </template>
+  <button type="button" class="secondary" @click="add()">+ 添加选项</button>
+
+  <label for="mechanism">投票机制</label>
+  <select id="mechanism" name="mechanism" x-model="mechanism">
+    <option value="single">单选 —— 选恰好一项</option>
+    <option value="multiple">多选 —— 选 1 至 N 项</option>
+    <option value="ranking">排序 —— 对全部选项排优先级</option>
+    <option value="scoring">打分 —— 每项给 1–5 分</option>
+  </select>
+
+  <div x-show="mechanism === 'multiple'">
+    <label for="multi_max_n">最多可选项数 N（留空表示不限）</label>
+    <input type="number" id="multi_max_n" name="multi_max_n" min="1"
+           value="{{ form.multi_max_n if form else '' }}">
+  </div>
+
+  <label for="deadline">截止时间（可选，按 UTC）</label>
+  <input type="datetime-local" id="deadline" name="deadline"
+         value="{{ form.deadline if form else '' }}">
+
+  <label style="display:flex; align-items:center; gap:0.5rem; font-weight:600; margin-top:1rem;">
+    <input type="checkbox" name="hide_results" style="width:auto;"
+           {% if form and form.hide_results %}checked{% endif %}>
+    截止前隐藏结果（抑制从众/刷票放大）
+  </label>
+
+  <div style="margin-top:1.25rem;">
+    <button type="submit">创建投票</button>
+  </div>
+</form>
+
+<script>
+function createForm(initialOptions, initialMechanism) {
+  return {
+    options: (initialOptions && initialOptions.length >= 2) ? initialOptions : ['', ''],
+    mechanism: initialMechanism || 'single',
+    add() { this.options.push(''); },
+    remove(i) { if (this.options.length > 2) this.options.splice(i, 1); },
+  };
+}
+</script>
+{% endblock %}

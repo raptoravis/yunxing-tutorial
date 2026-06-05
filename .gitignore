@@ -1,3 +1,10 @@
-
 # Compound Engineering machine-local config
 .yunxing/*.local.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.db
+*.db-wal
+*.db-shm
