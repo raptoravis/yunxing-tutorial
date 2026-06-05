@@ -11,20 +11,13 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..dedup import client_ip, get_or_create_voter_key, rate_limiter, set_voter_cookie
-from ..models import SCORE_MAX, SCORE_MIN, Mechanism, Option, Poll, Vote
+from ..models import BALLOT_PARTIAL, SCORE_MAX, SCORE_MIN, Mechanism, Option, Poll, Vote
 from ..security import generate_admin_token, generate_poll_id, hash_token
 from ..templating import templates
 
 router = APIRouter()
 
 VALID_MECHANISMS = {m.value for m in Mechanism}
-
-BALLOT_PARTIAL = {
-    Mechanism.single.value: "_ballot_single.html",
-    Mechanism.multiple.value: "_ballot_multiple.html",
-    Mechanism.ranking.value: "_ballot_ranking.html",
-    Mechanism.scoring.value: "_ballot_scoring.html",
-}
 
 
 def poll_has_votes(db: Session, poll_id: str) -> bool:
@@ -220,19 +213,11 @@ def _existing_vote(db: Session, poll_id: str, voter_key: str) -> Vote | None:
 
 @router.get("/p/{poll_id}", response_class=HTMLResponse)
 def poll_page(poll_id: str, request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    from ..routes.results import state_context
+
     poll = _get_poll_or_404(db, poll_id)
     voter_key, is_new = get_or_create_voter_key(request)
-    existing = None if is_new else _existing_vote(db, poll_id, voter_key)
-    closed = poll.is_closed()
-
-    ctx = {
-        "poll": poll,
-        "ballot_partial": BALLOT_PARTIAL[poll.mechanism],
-        "existing": existing,
-        "existing_payload": existing.payload if existing else None,
-        "has_voted": existing is not None,
-        "closed": closed,
-    }
+    ctx = state_context(db, poll, None if is_new else voter_key)
     response = templates.TemplateResponse(request, "poll.html", ctx)
     if is_new:
         set_voter_cookie(response, voter_key)
@@ -267,13 +252,9 @@ async def submit_vote(
     form = await request.form()
     payload, error = parse_ballot(poll, form)
     if error:
-        ctx = {
-            "poll": poll,
-            "ballot_partial": BALLOT_PARTIAL[poll.mechanism],
-            "existing_payload": payload,
-            "error": error,
-        }
-        response = templates.TemplateResponse(request, "_ballot_form.html", ctx, status_code=400)
+        from ..routes.results import render_poll_state
+
+        response = render_poll_state(request, db, poll, voter_key=voter_key, error=error)
         if is_new:
             set_voter_cookie(response, voter_key)
         return response
@@ -286,6 +267,11 @@ async def submit_vote(
     else:
         db.add(Vote(poll_id=poll_id, voter_key=voter_key, ip=client_ip(request), payload=payload))
     db.commit()
+
+    # 投后实时广播（U6 接入 broker；U5 期间 no-op）。
+    from ..routes.results import publish_results
+
+    publish_results(db, poll)
 
     response = render_post_vote(request, db, poll, voter_key=voter_key)
     if is_new:

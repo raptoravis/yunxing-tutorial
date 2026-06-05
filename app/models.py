@@ -38,6 +38,14 @@ class Mechanism(str, enum.Enum):
 SCORE_MIN = 1
 SCORE_MAX = 5
 
+# 机制 → ballot partial 模板名（polls/results 共用，避免循环导入）。
+BALLOT_PARTIAL = {
+    "single": "_ballot_single.html",
+    "multiple": "_ballot_multiple.html",
+    "ranking": "_ballot_ranking.html",
+    "scoring": "_ballot_scoring.html",
+}
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
