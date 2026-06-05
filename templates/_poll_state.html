@@ -1,5 +1,6 @@
 {# #vote-panel 的内部状态：结果区 + （未关闭时）投票/改票表单。 #}
-<div id="results">
+{# 结果区订阅 SSE：投票后服务端推送新结果即时替换（R9 / U6）。 #}
+<div id="results" hx-ext="sse" sse-connect="/p/{{ poll.id }}/stream" sse-swap="update">
   {% include "_results.html" %}
 </div>
 

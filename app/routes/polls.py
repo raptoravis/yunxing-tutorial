@@ -20,6 +20,11 @@ router = APIRouter()
 VALID_MECHANISMS = {m.value for m in Mechanism}
 
 
+async def parse_form(request: Request) -> FormData:
+    """异步依赖：读取表单。让路由保持 def（threadpool 跑同步 DB，KTD2）。"""
+    return await request.form()
+
+
 def poll_has_votes(db: Session, poll_id: str) -> bool:
     return db.query(Vote).filter_by(poll_id=poll_id).first() is not None
 
@@ -120,8 +125,11 @@ def create_form(request: Request) -> HTMLResponse:
 
 
 @router.post("/polls", response_class=HTMLResponse)
-async def create_poll(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    form = await request.form()
+def create_poll(
+    request: Request,
+    form: FormData = Depends(parse_form),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
     title = (form.get("title") or "").strip()
     mechanism = (form.get("mechanism") or "").strip()
     options = [o.strip() for o in form.getlist("options") if o and o.strip()]
@@ -225,8 +233,11 @@ def poll_page(poll_id: str, request: Request, db: Session = Depends(get_db)) -> 
 
 
 @router.post("/p/{poll_id}/vote", response_class=HTMLResponse)
-async def submit_vote(
-    poll_id: str, request: Request, db: Session = Depends(get_db)
+def submit_vote(
+    poll_id: str,
+    request: Request,
+    form: FormData = Depends(parse_form),
+    db: Session = Depends(get_db),
 ) -> HTMLResponse:
     poll = _get_poll_or_404(db, poll_id)
 
@@ -249,7 +260,6 @@ async def submit_vote(
         )
 
     voter_key, is_new = get_or_create_voter_key(request)
-    form = await request.form()
     payload, error = parse_ballot(poll, form)
     if error:
         from ..routes.results import render_poll_state

@@ -70,3 +70,116 @@ def test_poll_page_shows_results_after_vote(client, Session):
     assert "共 1 人投票" in resp.text
     # 仍可改票
     assert "修改你的投票" in resp.text
+
+
+# ---------- U6：SSE + pub/sub ----------
+
+
+def test_broker_subscribe_publish_unsubscribe():
+    import asyncio
+
+    from app.broker import Broker
+
+    async def run():
+        b = Broker()
+        q = b.subscribe("p1")
+        assert b.subscriber_count("p1") == 1
+        b.publish("p1")
+        await asyncio.sleep(0)  # 让 call_soon_threadsafe 投递落地
+        assert not q.empty()
+        assert await q.get() is None
+        b.unsubscribe("p1", q)
+        assert b.subscriber_count("p1") == 0  # 注册表清理，不泄漏
+
+    asyncio.run(run())
+
+
+def test_broker_fans_out_to_all_subscribers():
+    import asyncio
+
+    from app.broker import Broker
+
+    async def run():
+        b = Broker()
+        q1, q2 = b.subscribe("p"), b.subscribe("p")
+        b.publish("p")
+        await asyncio.sleep(0)
+        assert not q1.empty() and not q2.empty()
+
+    asyncio.run(run())
+
+
+def test_broker_publish_no_subscribers_noop():
+    from app.broker import Broker
+
+    b = Broker()
+    b.publish("nobody")  # 不应抛错
+    assert b.subscriber_count("nobody") == 0
+
+
+def test_vote_triggers_broker_publish(client, Session, monkeypatch):
+    import app.routes.results as results
+
+    calls = []
+    monkeypatch.setattr(results.broker, "publish", lambda pid: calls.append(pid))
+    pid, oids = make_poll(Session)
+    client.post(f"/p/{pid}/vote", data={"choice": str(oids[0])})
+    assert calls == [pid]
+
+
+# SSE 广播载荷（每连接重渲染）直接测 _render_stream_html / results_html，
+# 不经 HTTP 流式传输——TestClient 对无限 SSE 生成器会在断连检测处挂起，
+# 实时传输本身在浏览器级（U6 Verification）验证。
+
+
+def _vote_directly(Session, poll_id, voter_key, payload):
+    from app.models import Vote
+    s = Session()
+    try:
+        s.add(Vote(poll_id=poll_id, voter_key=voter_key, payload=payload))
+        s.commit()
+    finally:
+        s.close()
+
+
+def test_stream_payload_voted_shows_results(Session):
+    from app.routes.results import _render_stream_html
+
+    pid, oids = make_poll(Session)
+    _vote_directly(Session, pid, "vk1", oids[0])
+    html = _render_stream_html(pid, "vk1")
+    assert html is not None
+    assert "共 1 人投票" in html
+
+
+def test_stream_payload_hidden_during_voting(Session):
+    from app.routes.results import _render_stream_html
+
+    pid, oids = make_poll(Session, hide_results=True)
+    _vote_directly(Session, pid, "vk1", oids[0])
+    html = _render_stream_html(pid, "vk1")
+    # 隐藏结果时广播的是隐藏提示，不含计票
+    assert "共 1 人投票" not in html
+    assert "隐藏结果" in html or "投票结束后公布" in html
+
+
+def test_stream_payload_unvoted_hidden(Session):
+    from app.routes.results import _render_stream_html
+
+    pid, oids = make_poll(Session)
+    html = _render_stream_html(pid, "never-voted")
+    assert "投票后即可查看" in html
+
+
+def test_stream_payload_missing_poll_returns_none(Session):
+    from app.routes.results import _render_stream_html
+
+    assert _render_stream_html("nonexistent", "vk") is None
+
+
+def test_stream_endpoint_registered():
+    """路由已挂载且声明为 SSE（content-type 在传输层验证，此处只查注册）。"""
+    from app.main import app
+
+    paths = {r.path for r in app.routes}
+    assert "/p/{poll_id}/stream" in paths
