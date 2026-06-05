@@ -10,7 +10,7 @@
 {% endif %}
 
 <form method="post" action="/polls" class="card"
-      x-data="createForm({{ (form.options if form else ['', '']) | tojson }}, {{ (form.mechanism if form else 'single') | tojson }})">
+      x-data='createForm({{ (form.options if form else ["", ""]) | tojson }}, {{ (form.mechanism if form else "single") | tojson }})'>
   <label for="title">标题</label>
   <input type="text" id="title" name="title" placeholder="例如：本周五午餐去哪？"
          value="{{ form.title if form else '' }}" required>

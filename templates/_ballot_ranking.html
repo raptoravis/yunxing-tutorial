@@ -1,8 +1,8 @@
 <p class="muted">拖动或用按钮把全部选项从高到低排好优先级（要求全排）：</p>
-<div x-data="rankingBallot(
-  [{% for o in poll.options %}{id: {{ o.id }}, label: {{ o.label | tojson }}}{{ ',' if not loop.last }}{% endfor %}],
+<div x-data='rankingBallot(
+  [{% for o in poll.options %}{id: {{ o.id }}, label: {{ o.label | tojson }}}{{ "," if not loop.last }}{% endfor %}],
   {{ (existing_payload if existing_payload else []) | tojson }}
-)">
+)'>
   <ul class="sortable-list" x-sort="move($item, $position)">
     <template x-for="(oid, idx) in items" :key="oid">
       <li class="sortable-item" x-sort:item="oid">

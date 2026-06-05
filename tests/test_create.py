@@ -115,6 +115,14 @@ def test_hide_results_persisted(client, Session):
         s.close()
 
 
+def test_create_form_xdata_single_quoted(client):
+    """x-data 含 tojson（带双引号），属性须用单引号包裹，否则 Alpine 解析失败。"""
+    html = client.get("/").text
+    assert "x-data='createForm(" in html
+    # 不得出现双引号包裹导致提前截断的形态
+    assert 'x-data="createForm(' not in html
+
+
 def test_deadline_future_accepted(client, Session):
     resp = client.post("/polls", data={"title": "t", "mechanism": "single",
                                         "options": ["A", "B"], "deadline": _future()})

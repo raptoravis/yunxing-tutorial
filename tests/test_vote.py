@@ -165,6 +165,14 @@ def test_poll_has_votes_freeze_helper(client, Session):
         s.close()
 
 
+def test_ranking_ballot_xdata_single_quoted(client, Session):
+    """排序 ballot 的 x-data 含 tojson 的标签字符串，须单引号包裹属性。"""
+    pid, oids = make_poll(Session, "ranking", ["火锅", "烧烤", "日料"])
+    html = client.get(f"/p/{pid}").text
+    assert "x-data='rankingBallot(" in html
+    assert 'x-data="rankingBallot(' not in html
+
+
 def test_vote_on_missing_poll_404(client):
     resp = client.post("/p/nonexistent/vote", data={"choice": "1"})
     assert resp.status_code == 404
